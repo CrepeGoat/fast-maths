@@ -1,0 +1,17 @@
+.pijul
+.ignore
+
+.DS_Store
+
+*.sublime-workspace
+
+# Zig
+zig-cache
+zig-out
+build
+dist
+*.so
+
+# Python
+venv
+*.egg-info
