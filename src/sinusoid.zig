@@ -205,9 +205,7 @@ const atoms = struct {
         // https://en.wikipedia.org/wiki/Bh%C4%81skara_I%27s_sine_approximation_formula#Equivalent_forms_of_the_formula
         const PI2 = comptime std.math.pi * std.math.pi;
         const xx = x * x;
-        const _2xx = xx + xx;
-        const _4xx = _2xx + _2xx;
-        return (PI2 - _4xx) / (PI2 + xx);
+        return (PI2 - mulPow2(2, xx)) / (PI2 + xx);
     }
 };
 
@@ -258,6 +256,98 @@ fn castAngleIntToFloat(comptime f: type, angle: anytype) f {
 
     var angle_f: f = @floatFromInt(angle);
     return angle_f * scale_to_radians;
+}
+
+test "mulPow2" {
+    try std.testing.expectEqual(@as(f32, 2.0), mulPow2(1, @as(f32, 1.0)));
+    try std.testing.expectEqual(@as(f32, 0.5), mulPow2(-1, @as(f32, 1.0)));
+
+    const shift_to_pos_zero = mulPow2(-5, std.math.floatMin(f32));
+    try std.testing.expect(mulPow2(0, std.math.floatMin(f32)) > 0);
+    try std.testing.expectEqual(@as(f32, 0), shift_to_pos_zero);
+    try std.testing.expectEqual(false, std.math.signbit(shift_to_pos_zero));
+
+    const shift_to_neg_zero = mulPow2(-5, -std.math.floatMin(f32));
+    try std.testing.expect(mulPow2(0, -std.math.floatMin(f32)) < 0);
+    try std.testing.expectEqual(@as(f32, -0), shift_to_neg_zero);
+    try std.testing.expectEqual(true, std.math.signbit(shift_to_neg_zero));
+}
+
+fn mulPow2(
+    comptime pow2: comptime_int,
+    x: anytype,
+) @TypeOf(x) {
+    const fN = @TypeOf(x);
+    comptime std.debug.assert(@typeInfo(fN) == .Float);
+
+    // Short-circuit no-ops
+    if (comptime pow2 == 0) return x;
+
+    var x_bits: FloatDecompSign(fN) = @bitCast(x);
+    const exp_1 = comptime @as(FloatDecompSign(fN), @bitCast(
+        FloatDecomp(fN){ .mantissa = 0, .exponent = 1, .sign_neg = false },
+    ));
+
+    if (pow2 > 0) {
+        // TODO handle overflow case
+        x_bits.exp_man += pow2 * exp_1.exp_man;
+    } else {
+        // Saturating subtraction: if power-of-two denominator is too large,
+        // the result will set all matissa bits to zero -> float will be zero.
+        x_bits.exp_man -|= (-pow2) * exp_1.exp_man;
+    }
+    return @bitCast(x_bits);
+}
+
+test "floating point decomp" {
+    inline for (.{ f16, f32, f64 }) |f| {
+        comptime try std.testing.expectEqual(
+            @bitSizeOf(f),
+            @bitSizeOf(FloatDecomp(f)),
+        );
+
+        const test_cases: [3]struct { f, FloatDecomp(f) } = .{
+            .{ 0.0, .{
+                .sign_neg = false,
+                .exponent = 0,
+                .mantissa = 0,
+            } },
+            .{ 1.0, .{
+                .sign_neg = false,
+                .exponent = (1 << (std.math.floatExponentBits(f) - 1)) - 1,
+                .mantissa = 0,
+            } },
+            .{ -0.375, .{
+                .sign_neg = true,
+                .exponent = (1 << (std.math.floatExponentBits(f) - 1)) - 3,
+                .mantissa = 1 << (std.math.floatMantissaBits(f) - 1),
+            } },
+        };
+        inline for (test_cases) |test_case| {
+            const result: FloatDecomp(f) = @bitCast(test_case[0]);
+            const expt_result = test_case[1];
+
+            try std.testing.expectEqual(expt_result, result);
+        }
+    }
+}
+
+fn FloatDecomp(comptime f: type) type {
+    return packed struct {
+        mantissa: std.meta.Int(std.builtin.Signedness.unsigned, std.math.floatMantissaBits(f)),
+        exponent: std.meta.Int(std.builtin.Signedness.unsigned, std.math.floatExponentBits(f)),
+        sign_neg: bool,
+    };
+}
+
+fn FloatDecompSign(comptime f: type) type {
+    return packed struct {
+        exp_man: std.meta.Int(
+            std.builtin.Signedness.unsigned,
+            std.math.floatExponentBits(f) + std.math.floatMantissaBits(f),
+        ),
+        sign_neg: bool,
+    };
 }
 
 const Q_8TH_PI = 0x1000;
