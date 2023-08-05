@@ -78,11 +78,10 @@ pub export fn sincosBhaskara(x: u16) SinCosExtern {
     if (x_bits.is_even_4th) {
         x_folded = Q_HALF_PI -% x_folded;
     }
-    const angle: f32 = castAngleIntToFloat(f32, @as(u16, x_folded));
 
     // Approximate positive cosine via Bhaskara's method
     //     => full range = [0, 1/2 pi]
-    const cos = atoms.cosBhaskara(f32, angle);
+    const cos = atoms.cosBhaskara(f32, @as(u16, x_folded));
     // Calculate positive sine from cosine
     const sin = composites.posSinFromCos(f32, cos);
 
@@ -206,13 +205,35 @@ const atoms = struct {
         };
     }
 
-    fn cosBhaskara(comptime fN: type, x: fN) fN {
+    fn cosBhaskara(comptime fN: type, x: anytype) fN {
+        const IntType = @TypeOf(x);
+        comptime std.debug.assert(@typeInfo(IntType) == .Int);
+
+        const x_float: fN = @floatFromInt(x);
+
         // https://en.wikipedia.org/wiki/Bh%C4%81skara_I%27s_sine_approximation_formula#Equivalent_forms_of_the_formula
-        const PI2 = comptime std.math.pi * std.math.pi;
-        const xx = x * x;
+        // ---
+        // OPTIMIZATION: the original rational expression can be written as:
+        //
+        //  f(x) = (PI^2 - 4x^2) / (PI^2 + x^2)
+        //
+        // where x is in radians. This can be refactored into a function that
+        // operates on angles in arbitrary units u := s * radians:
+        //
+        //  f(x) = (s^2 * PI^2 - 4(s*x)^2) / (s^2 * PI^2 + (s*x)^2)
+        //
+        // By choosing s = (2^16) / (2PI), we can skip the scaling
+        // multiplication performed after the int-to-float conversion.
+        const U_PI = comptime @as(
+            comptime_float,
+            @floatFromInt(1 << @bitSizeOf(IntType)),
+        ) / 2.0;
+        const U_PI2 = comptime U_PI * U_PI;
+
+        const xx = x_float * x_float;
         const _2xx = xx + xx;
         const _4xx = _2xx + _2xx;
-        return (PI2 - _4xx) / (PI2 + xx);
+        return (U_PI2 - _4xx) / (U_PI2 + xx);
     }
 };
 
@@ -221,48 +242,6 @@ fn SinCos(comptime fN: type) type {
         sin: fN,
         cos: fN,
     };
-}
-
-test "castAngleIntToFloat" {
-    const Q_EIGHTH_PI = 0x1000;
-    const EIGHTH_PI = std.math.pi / 8.0;
-    const test_cases = [_]struct { f32, u16 }{
-        .{ 0, 0 },
-        .{ EIGHTH_PI, Q_EIGHTH_PI },
-        .{ 2 * EIGHTH_PI, 2 * Q_EIGHTH_PI },
-        .{ 3 * EIGHTH_PI, 3 * Q_EIGHTH_PI },
-        .{ 4 * EIGHTH_PI, 4 * Q_EIGHTH_PI },
-        .{ 5 * EIGHTH_PI, 5 * Q_EIGHTH_PI },
-        .{ 6 * EIGHTH_PI, 6 * Q_EIGHTH_PI },
-        .{ 7 * EIGHTH_PI, 7 * Q_EIGHTH_PI },
-        .{ 8 * EIGHTH_PI, 8 * Q_EIGHTH_PI },
-        .{ 9 * EIGHTH_PI, 9 * Q_EIGHTH_PI },
-        .{ 10 * EIGHTH_PI, 10 * Q_EIGHTH_PI },
-        .{ 11 * EIGHTH_PI, 11 * Q_EIGHTH_PI },
-        .{ 12 * EIGHTH_PI, 12 * Q_EIGHTH_PI },
-        .{ 13 * EIGHTH_PI, 13 * Q_EIGHTH_PI },
-        .{ 14 * EIGHTH_PI, 14 * Q_EIGHTH_PI },
-        .{ 15 * EIGHTH_PI, 15 * Q_EIGHTH_PI },
-    };
-
-    for (test_cases) |test_case| {
-        const result = castAngleIntToFloat(f32, test_case[1]);
-        const expt_result = test_case[0];
-
-        try std.testing.expectApproxEqRel(expt_result, result, 1e-6);
-    }
-}
-
-/// Assumes the full range of @TypeOf(angle) linearly spans [0, 2*pi].
-fn castAngleIntToFloat(comptime f: type, angle: anytype) f {
-    const IntType = @TypeOf(angle);
-    const scale_to_radians = _2PI / @as(
-        comptime_float,
-        @floatFromInt(1 << @bitSizeOf(IntType)),
-    );
-
-    var angle_f: f = @floatFromInt(angle);
-    return angle_f * scale_to_radians;
 }
 
 const Q_8TH_PI = 0x1000;
