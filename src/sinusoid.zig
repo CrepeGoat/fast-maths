@@ -14,8 +14,87 @@ comptime {
     @setFloatMode(std.builtin.FloatMode.Optimized);
 }
 
+test "arctan2 functions" {
+    const sample_count = 64;
+    const coord_low = -10.0;
+    const coord_high = 10.0;
+
+    const tolerance = 9607;
+
+    for (0..sample_count) |i| for (0..sample_count) |j| {
+        const n: comptime_float = @floatFromInt(sample_count);
+        const i_float: f32 = @floatFromInt(i);
+        const j_float: f32 = @floatFromInt(j);
+        const x: f32 = ((coord_high - coord_low) / n) * i_float - coord_low;
+        const y: f32 = ((coord_high - coord_low) / n) * j_float - coord_low;
+
+        const result = atan2Rational2(y, x);
+        const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (2 * std.math.pi));
+
+        const epsilon: i16 = @bitCast(expt_result -% result);
+        try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
+    };
+}
+
+pub export fn atan2Rational2(y: f32, x: f32) u16 {
+    var x_mut = x;
+    var y_mut = y;
+
+    const x_abs = @fabs(x);
+    const y_abs = @fabs(y);
+
+    const is_refl_pi_4th = (x_abs > y_abs);
+    if (is_refl_pi_4th) {
+        // We save 1 MOV instruction by using a -temp here,
+        // which performs a NEG and stores the result in x's register.
+        const tmp = y_mut;
+        y_mut = x_mut;
+        x_mut = -tmp;
+    }
+
+    // Math section follows.
+    // In total, we perform 7 multiplications and 2 additions.
+    // That should be 41 cycles total.
+    // Including the division (29 cycles), that's 70 cycles of math ops.
+
+    // These constants chosen for a minimax approx subject to constraints
+    // that f(1) = 8192, i.e. the s16 angle corresponding to pi/4.
+    // Results are valid for magnitudes of (x, y) between
+    // 1.0 x 10^-13 and 1.0 x 10^11.
+    const A = 10420.2706879;
+    const B = 1956.92683519;
+    const C = 0.510888369518;
+
+    const y2 = y_mut * y_mut;
+    const x2 = x_mut * x_mut;
+
+    const num = x_mut * (A * y2 + B * x2);
+    const den = y_mut * (y2 + C * x2);
+    if (den == 0.0) {
+        // If the math is correct here, we don't have to check for NaNs or infinities.
+        // Just the single case of denominator == 0.0. Otherwise we get back a valid number.
+        // Also, there should be 4 more instructions from this if statement, and 2-4 more cycles.
+        return 0;
+    }
+
+    // Do a FLOOR and MFC1 instruction combo here! That should add 6 cycles and 2 instructions.
+    var angle: u16 = @bitCast(@as(i16, @intFromFloat(@floor(num / den))));
+
+    // This sequence of conditions should be 6 instructions and 4-6 cycles total.
+    if (is_refl_pi_4th) {
+        angle +%= Q_HALF_PI;
+    }
+    if (y_mut < 0.0) {
+        // Using some clever facts of how we swapped around y earlier!
+        // This lets us do two rotational checks in one fell swoop.
+        angle += Q_PI;
+    }
+    // Conversion to s16 adds 2 instructions and 2 cycles.
+    // Return instruction is 1 more instruction and 1 more cycle.
+    return angle;
+}
+
 test "sincos functions" {
-    const Q_PI = 0x8000;
     const PI = std.math.pi;
 
     const FuncType: type = fn (u16) callconv(.C) SinCosExtern;
@@ -247,6 +326,7 @@ fn SinCos(comptime fN: type) type {
 const Q_8TH_PI = 0x1000;
 const Q_4TH_PI = 0x2000;
 const Q_HALF_PI = 0x4000;
+const Q_PI = 0x8000;
 
 const SQRT_HALF = std.math.sqrt1_2;
 const _2PI = 2 * std.math.pi;
