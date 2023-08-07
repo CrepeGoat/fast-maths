@@ -51,96 +51,23 @@ test "arctan2 functions" {
 }
 
 pub export fn atan2Cordic2Rational3(y: f32, x: f32) u16 {
-    var x_mut = x;
-    var y_mut = y;
+    const atan2At0 = struct {
+        fn call(_y: f32, _x: f32) u16 {
+            return atoms.atan2Rational3At0Mod180(f32, _y, _x);
+        }
+    }.call;
 
-    // Rotate input
-    const is_rot_n90 = @fabs(x_mut) < @fabs(y_mut);
-    if (is_rot_n90) {
-        const tmp = x_mut;
-        x_mut = y_mut;
-        y_mut = -tmp;
-    }
-    std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
-
-    if (x_mut == 0) {
-        return 0;
-    }
-
-    const is_rot_180 = x_mut < 0;
-    // tan(x) = tan(x + 180) -> no need to rotate 180
-
-    // Math section follows.
-    // In total, we perform 7 multiplications and 2 additions.
-    // That should be 41 cycles total.
-    // Including the division (29 cycles), that's 70 cycles of math ops.
-
-    // These constants chosen for a minimax approx subject to constraints
-    // that f(1) = 8192, i.e. the s16 angle corresponding to pi/4.
-    // Results are valid for magnitudes of (x, y) between
-    // 1.0 x 10^-13 and 1.0 x 10^11.
-    const A = 10420.2706879;
-    const B = 1956.92683519;
-    const C = 0.510888369518;
-
-    const y2 = y_mut * y_mut;
-    const x2 = x_mut * x_mut;
-
-    const num = y_mut * (A * x2 + B * y2);
-    const den = x_mut * (x2 + C * y2);
-    std.debug.assert(den != 0.0);
-
-    // Do a FLOOR and MFC1 instruction combo here! That should add 6 cycles and 2 instructions.
-    var result: u16 = @bitCast(@as(i16, @intFromFloat(@floor(num / den))));
-
-    // Un-rotate output
-    if (is_rot_180) {
-        result +%= Q_PI;
-    }
-    if (is_rot_n90) {
-        result +%= Q_HALF_PI;
-    }
-
-    return result;
+    return composites.atan2Cordic2(f32, atan2At0, y, x);
 }
 
 pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
-    var x_mut = x;
-    var y_mut = y;
+    const atan2At0 = struct {
+        fn call(_y: f32, _x: f32) u16 {
+            return atoms.atan2Poly1At0Mod180(f32, _y, _x);
+        }
+    }.call;
 
-    // Rotate input
-    const is_rot_n90 = @fabs(x_mut) < @fabs(y_mut);
-    if (is_rot_n90) {
-        const tmp = x_mut;
-        x_mut = y_mut;
-        y_mut = -tmp;
-    }
-    std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
-
-    if (x_mut == 0) {
-        return 0;
-    }
-
-    const is_rot_180 = x_mut < 0;
-    // tan(x) = tan(x + 180) -> no need to rotate 180
-
-    // Approximate atan about tan = 0
-    const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
-    const slope_adj = 5.0 / 6.0;
-    var result: u16 = @bitCast(@as(
-        i16,
-        @intFromFloat((comptime radians_to_uint * slope_adj) * (y_mut / x_mut)),
-    ));
-
-    // Un-rotate output
-    if (is_rot_180) {
-        result +%= Q_PI;
-    }
-    if (is_rot_n90) {
-        result +%= Q_HALF_PI;
-    }
-
-    return result;
+    return composites.atan2Cordic2(f32, atan2At0, y, x);
 }
 
 test "sincos functions" {
@@ -281,6 +208,45 @@ pub const SinCosExtern = extern struct {
 };
 
 const composites = struct {
+    fn atan2Cordic2(
+        comptime FloatType: type,
+        comptime atan2At0: fn (FloatType, FloatType) u16,
+        y: FloatType,
+        x: FloatType,
+    ) u16 {
+        var x_mut = x;
+        var y_mut = y;
+
+        // Rotate input
+        const is_rot_n90 = @fabs(x_mut) < @fabs(y_mut);
+        if (is_rot_n90) {
+            const tmp = x_mut;
+            x_mut = y_mut;
+            y_mut = -tmp;
+        }
+        std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
+
+        if (x_mut == 0) {
+            return 0;
+        }
+
+        const is_rot_180 = x_mut < 0;
+        // tan(x) = tan(x + 180) -> no need to rotate 180
+
+        // Approximate atan about tan = 0
+        var result: u16 = atan2At0(y_mut, x_mut);
+
+        // Un-rotate output
+        if (is_rot_180) {
+            result +%= Q_PI;
+        }
+        if (is_rot_n90) {
+            result +%= Q_HALF_PI;
+        }
+
+        return result;
+    }
+
     const AngleAndQuadrant = packed struct {
         angle_4th: u14,
         is_even_4th: bool,
@@ -299,6 +265,40 @@ const composites = struct {
 };
 
 const atoms = struct {
+    fn atan2Poly1At0Mod180(comptime fN: type, y: fN, x: fN) u16 {
+        const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
+        const slope_adj = 5.0 / 6.0;
+        return @bitCast(@as(
+            i16,
+            @intFromFloat((comptime radians_to_uint * slope_adj) * (y / x)),
+        ));
+    }
+
+    fn atan2Rational3At0Mod180(comptime fN: type, y: fN, x: fN) u16 {
+        // Math section follows.
+        // In total, we perform 7 multiplications and 2 additions.
+        // That should be 41 cycles total.
+        // Including the division (29 cycles), that's 70 cycles of math ops.
+
+        // These constants chosen for a minimax approx subject to constraints
+        // that f(1) = 8192, i.e. the s16 angle corresponding to pi/4.
+        // Results are valid for magnitudes of (x, y) between
+        // 1.0 x 10^-13 and 1.0 x 10^11.
+        const A = 10420.2706879;
+        const B = 1956.92683519;
+        const C = 0.510888369518;
+
+        const y2 = y * y;
+        const x2 = x * x;
+
+        const num = y * (A * x2 + B * y2);
+        const den = x * (x2 + C * y2);
+        std.debug.assert(den != 0.0);
+
+        // Do a FLOOR and MFC1 instruction combo here! That should add 6 cycles and 2 instructions.
+        return @bitCast(@as(i16, @intFromFloat(@floor(num / den))));
+    }
+
     fn sincosPoly3ApproxComplement(comptime fN: type, x: anytype) SinCos(fN) {
         const IntType = @TypeOf(x);
         comptime std.debug.assert(@typeInfo(IntType) == .Int);
