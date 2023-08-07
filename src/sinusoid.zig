@@ -64,6 +64,7 @@ pub export fn atan2Cordic2Rational3(y: f32, x: f32) u16 {
     std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
 
     if (x_mut == 0) {
+        @setCold(true);
         return 0;
     }
 
@@ -117,6 +118,7 @@ pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
     std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
 
     if (x_mut == 0) {
+        @setCold(true);
         return 0;
     }
 
