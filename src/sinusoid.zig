@@ -57,7 +57,7 @@ pub export fn atan2Cordic2Rational3(y: f32, x: f32) u16 {
         }
     }.call;
 
-    return composites.atan2Cordic2(f32, atan2At0, y, x);
+    return composites.atan2Cordic2(f32, atan2At0, y, x) catch 0.0;
 }
 
 pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
@@ -67,7 +67,7 @@ pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
         }
     }.call;
 
-    return composites.atan2Cordic2(f32, atan2At0, y, x);
+    return composites.atan2Cordic2(f32, atan2At0, y, x) catch 0.0;
 }
 
 test "sincos functions" {
@@ -208,12 +208,13 @@ pub const SinCosExtern = extern struct {
 };
 
 const composites = struct {
+    const Atan2Cordic2Errors = error{AngleAtOrigin};
     fn atan2Cordic2(
         comptime FloatType: type,
         comptime atan2At0: fn (FloatType, FloatType) u16,
         y: FloatType,
         x: FloatType,
-    ) u16 {
+    ) Atan2Cordic2Errors!u16 {
         var x_mut = x;
         var y_mut = y;
 
@@ -227,7 +228,7 @@ const composites = struct {
         std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
 
         if (x_mut == 0) {
-            return 0;
+            return error.AngleAtOrigin;
         }
 
         const is_rot_180 = x_mut < 0;
