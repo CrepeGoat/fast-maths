@@ -21,7 +21,7 @@ test "arctan2 functions" {
 
     const FuncType: type = fn (f32, f32) callconv(.C) u16;
     const test_cases = [_]struct { FuncType, comptime_int }{
-        // .{ atan2Cordic2Rational2, std.math.maxInt(u16) },
+        .{ atan2Cordic2Rational3, 2 },
         .{ atan2Cordic2Poly1, 500 },
     };
 
@@ -47,26 +47,27 @@ test "arctan2 functions" {
 
         // Corner-case: <x, y> = <0, 0>
         try std.testing.expectEqual(@as(u16, 0), func(0.0, 0.0));
-
-        std.debug.print("max_eps: {d}\n", .{max_eps});
     }
 }
 
-pub export fn atan2Cordic2Rational2(y: f32, x: f32) u16 {
+pub export fn atan2Cordic2Rational3(y: f32, x: f32) u16 {
     var x_mut = x;
     var y_mut = y;
 
-    const x_abs = @fabs(x);
-    const y_abs = @fabs(y);
-
-    const is_refl_pi_4th = (x_abs > y_abs);
-    if (is_refl_pi_4th) {
-        // We save 1 MOV instruction by using a -temp here,
-        // which performs a NEG and stores the result in x's register.
-        const tmp = y_mut;
-        y_mut = x_mut;
-        x_mut = -tmp;
+    // Rotate input
+    const is_rot_n90 = @fabs(x_mut) < @fabs(y_mut);
+    if (is_rot_n90) {
+        const tmp = x_mut;
+        x_mut = y_mut;
+        y_mut = -tmp;
     }
+    std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
+
+    if (x_mut == 0) {
+        return 0;
+    }
+
+    const is_rot_180 = x_mut < 0;
 
     // Math section follows.
     // In total, we perform 7 multiplications and 2 additions.
@@ -84,58 +85,44 @@ pub export fn atan2Cordic2Rational2(y: f32, x: f32) u16 {
     const y2 = y_mut * y_mut;
     const x2 = x_mut * x_mut;
 
-    const num = x_mut * (A * y2 + B * x2);
-    const den = y_mut * (y2 + C * x2);
-    if (den == 0.0) {
-        // If the math is correct here, we don't have to check for NaNs or infinities.
-        // Just the single case of denominator == 0.0. Otherwise we get back a valid number.
-        // Also, there should be 4 more instructions from this if statement, and 2-4 more cycles.
-        return 0;
-    }
+    const num = y_mut * (A * x2 + B * y2);
+    const den = x_mut * (x2 + C * y2);
+    std.debug.assert(den != 0.0);
 
     // Do a FLOOR and MFC1 instruction combo here! That should add 6 cycles and 2 instructions.
-    var angle: u16 = @bitCast(@as(i16, @intFromFloat(@floor(num / den))));
+    var result: u16 = @bitCast(@as(i16, @intFromFloat(@floor(num / den))));
 
-    // This sequence of conditions should be 6 instructions and 4-6 cycles total.
-    if (is_refl_pi_4th) {
-        angle +%= Q_HALF_PI;
+    // Un-rotate output
+    if (is_rot_180) {
+        result +%= Q_PI;
     }
-    if (y_mut < 0.0) {
-        // Using some clever facts of how we swapped around y earlier!
-        // This lets us do two rotational checks in one fell swoop.
-        angle +%= Q_PI;
+    if (is_rot_n90) {
+        result +%= Q_HALF_PI;
     }
-    // Conversion to s16 adds 2 instructions and 2 cycles.
-    // Return instruction is 1 more instruction and 1 more cycle.
-    return angle;
+
+    return result;
 }
 
 pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
     var x_mut = x;
     var y_mut = y;
 
-    const is_rot_90 = @fabs(x_mut) < @fabs(y_mut);
-    if (is_rot_90) {
-        // Rotate -90
+    // Rotate input
+    const is_rot_n90 = @fabs(x_mut) < @fabs(y_mut);
+    if (is_rot_n90) {
         const tmp = x_mut;
         x_mut = y_mut;
         y_mut = -tmp;
     }
     std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
 
-    const is_rot_180 = x_mut < 0;
-    if (is_rot_180) {
-        // Rotate -180
-        x_mut = -x_mut;
-        y_mut = -y_mut;
-    }
-    std.debug.assert(x_mut >= 0);
-    std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
-
     if (x_mut == 0) {
         return 0;
     }
 
+    const is_rot_180 = x_mut < 0;
+
+    // Approximate atan about tan = 0
     const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
     const slope_adj = 5.0 / 6.0;
     var result: u16 = @bitCast(@as(
@@ -143,10 +130,11 @@ pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
         @intFromFloat((comptime radians_to_uint * slope_adj) * (y_mut / x_mut)),
     ));
 
+    // Un-rotate output
     if (is_rot_180) {
         result +%= Q_PI;
     }
-    if (is_rot_90) {
+    if (is_rot_n90) {
         result +%= Q_HALF_PI;
     }
 
