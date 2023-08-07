@@ -44,6 +44,10 @@ test "arctan2 functions" {
                 try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
             }
         }
+
+        // Corner-case: <x, y> = <0, 0>
+        try std.testing.expectEqual(@as(u16, 0), func(0.0, 0.0));
+
         std.debug.print("max_eps: {d}\n", .{max_eps});
     }
 }
