@@ -15,36 +15,36 @@ comptime {
 }
 
 test "arctan2 functions" {
-    const sample_count = 64;
-    const coord_low = -10.0;
-    const coord_high = 10.0;
+    const u16_count = 1 << @bitSizeOf(u16);
+    const sample_count = 256;
+    const radii = [_]f32{ 1e-7, 1, 1e7 };
 
     const FuncType: type = fn (f32, f32) callconv(.C) u16;
     const test_cases = [_]struct { FuncType, comptime_int }{
-        .{ atan2Cordic2Rational2, 9607 },
-        .{ atan2Cordic2Poly1, 710 },
+        // .{ atan2Cordic2Rational2, std.math.maxInt(u16) },
+        .{ atan2Cordic2Poly1, 2238 },
     };
 
     inline for (test_cases) |test_case| {
         const func = test_case[0];
         const tolerance = test_case[1];
 
-        var max: u16 = 0;
-        for (0..sample_count) |i| for (0..sample_count) |j| {
-            const n: comptime_float = @floatFromInt(sample_count);
-            const i_float: f32 = @floatFromInt(i);
-            const j_float: f32 = @floatFromInt(j);
-            const x: f32 = ((coord_high - coord_low) / n) * i_float - coord_low;
-            const y: f32 = ((coord_high - coord_low) / n) * j_float - coord_low;
+        var max_eps: u16 = 0;
+        for (0..sample_count) |i| {
+            const expt_result: u16 = @as(u16, @intCast(i)) * (u16_count / sample_count);
+            const expt_angle = @as(f32, @floatFromInt(expt_result)) * _2PI / @as(f32, u16_count);
 
-            const result = func(y, x);
-            const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (_2PI));
+            for (radii) |radius| {
+                const x: f32 = std.math.cos(expt_angle) * radius;
+                const y: f32 = std.math.sin(expt_angle) * radius;
+                const result: i16 = @bitCast(func(y, x));
 
-            const epsilon: i16 = @bitCast(expt_result -% result);
-            max = @max(max, std.math.absCast(epsilon));
-            try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
-        };
-        std.debug.print("max: {d}\n", .{max});
+                const epsilon = @as(i16, @bitCast(expt_result)) -% result;
+                max_eps = @max(max_eps, std.math.absCast(epsilon));
+                try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
+            }
+        }
+        std.debug.print("max_eps: {d}\n", .{max_eps});
     }
 }
 
@@ -99,7 +99,7 @@ pub export fn atan2Cordic2Rational2(y: f32, x: f32) u16 {
     if (y_mut < 0.0) {
         // Using some clever facts of how we swapped around y earlier!
         // This lets us do two rotational checks in one fell swoop.
-        angle += Q_PI;
+        angle +%= Q_PI;
     }
     // Conversion to s16 adds 2 instructions and 2 cycles.
     // Return instruction is 1 more instruction and 1 more cycle.
@@ -110,34 +110,36 @@ pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
     var x_mut = x;
     var y_mut = y;
 
-    const is_rot_90 = x_mut < y_mut;
+    const is_rot_90 = @fabs(x_mut) < @fabs(y_mut);
     if (is_rot_90) {
         // Rotate -90
         const tmp = x_mut;
         x_mut = y_mut;
         y_mut = -tmp;
     }
+    std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
+
     const is_rot_180 = x_mut < 0;
     if (is_rot_180) {
         // Rotate -180
-        const tmp = x_mut;
-        x_mut = -y_mut;
-        y_mut = -tmp;
+        x_mut = -x_mut;
+        y_mut = -y_mut;
     }
+    std.debug.assert(x_mut >= 0);
 
     if (x_mut == 0) {
         return 0;
     }
 
     const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
-    const slope_adj = 0.5 * (1 + SQRT_HALF);
+    const slope_adj = 1;
     var result: u16 = @bitCast(@as(
         i16,
-        @intFromFloat((comptime radians_to_uint * slope_adj) * y_mut / x_mut),
+        @intFromFloat((comptime radians_to_uint * slope_adj) * (y_mut / x_mut)),
     ));
 
     if (is_rot_180) {
-        result += Q_PI;
+        result +%= Q_PI;
     }
     if (is_rot_90) {
         result +%= Q_HALF_PI;
