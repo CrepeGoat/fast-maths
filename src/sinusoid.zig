@@ -22,7 +22,7 @@ test "arctan2 functions" {
     const FuncType: type = fn (f32, f32) callconv(.C) u16;
     const test_cases = [_]struct { FuncType, comptime_int }{
         // .{ atan2Cordic2Rational2, std.math.maxInt(u16) },
-        .{ atan2Cordic2Poly1, 2238 },
+        .{ atan2Cordic2Poly1, 500 },
     };
 
     inline for (test_cases) |test_case| {
@@ -126,13 +126,14 @@ pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
         y_mut = -y_mut;
     }
     std.debug.assert(x_mut >= 0);
+    std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
 
     if (x_mut == 0) {
         return 0;
     }
 
     const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
-    const slope_adj = 1;
+    const slope_adj = 5.0 / 6.0;
     var result: u16 = @bitCast(@as(
         i16,
         @intFromFloat((comptime radians_to_uint * slope_adj) * (y_mut / x_mut)),
