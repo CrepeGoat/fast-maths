@@ -72,18 +72,25 @@ pub export fn sincosBhaskara(x: u16) SinCosExtern {
     //     [0, 4/2 pi] -> [0, 1/2 pi]
     //     => full range = [0, 1/2 pi]
     var x_folded: u15 = x_bits.angle_4th;
+    std.debug.assert(x_folded < Q_HALF_PI);
     // Conditionally reflect angle about theta = 1/4 pi
     //     [0, 1/2 pi] -> [1/2 pi, 0]
     //     => full range = [0, 1/2 pi]
     if (x_bits.is_even_4th) {
         x_folded = Q_HALF_PI -% x_folded;
     }
+    std.debug.assert(x_folded <= Q_HALF_PI);
 
     // Approximate positive cosine via Bhaskara's method
     //     => full range = [0, 1/2 pi]
     const cos = atoms.cosBhaskara(f32, @as(u16, x_folded));
     // Calculate positive sine from cosine
     const sin = composites.posSinFromCos(f32, cos);
+    {
+        const turns = std.math.atan2(f32, sin, cos) / _2PI;
+        std.debug.assert(turns >= 0);
+        std.debug.assert(turns <= 0.251);
+    }
 
     // Conditionally adjust signs of the result based on the angle's quadrant
     //     [0, 1/2 pi] -> [0, 4/2 pi]
@@ -112,15 +119,22 @@ pub export fn sincosPoly3Cordic1(x: u16) SinCosExtern {
     //     [0, 16/8 pi] -> [0, 1/8 pi]
     //     => full range = [0, 1/8 pi]
     var x_folded: u13 = x4th_bits.angle_16th;
+    std.debug.assert(x_folded < Q_8TH_PI);
     // Conditionally reflect angle about theta = 1/16 pi
     //     [0, 1/8 pi] -> [1/8 pi, 0]
     //     => full range = [0, 1/8 pi]
     if (is_refl_pi_4th) {
         x_folded = Q_8TH_PI - x_folded;
     }
+    std.debug.assert(x_folded <= Q_8TH_PI);
 
     // Approximate sin & cos via polynomials
     var result = atoms.sincosPoly3ApproxComplement(f32, @as(u16, x_folded));
+    {
+        const turns = std.math.atan2(f32, result.sin, result.cos) / _2PI;
+        std.debug.assert(turns >= 0);
+        std.debug.assert(turns <= 0.063);
+    }
 
     // Conditionally rotate the result 1/4 pi radians
     //     [0, 1/8 pi] -> [2/8 pi, 3/8 pi]
@@ -131,12 +145,21 @@ pub export fn sincosPoly3Cordic1(x: u16) SinCosExtern {
         result.sin = sin_tmp;
         result.cos = cos_tmp;
     }
+    {
+        const turns = std.math.atan2(f32, result.sin, result.cos) / _2PI;
+        std.debug.assert(0 <= turns and turns <= 3 * 0.188);
+        std.debug.assert(turns <= 0.063 or 0.124 <= turns);
+    }
     // Conditionally reflect the result about theta = 1/4 pi radians
     //     [0, 1/8 pi] -> [4/8 pi, 3/8 pi]
     //     [2/8 pi, 3/8 pi] -> [2/8 pi, 1/8 pi]
     //     => full range = [0, 4/8 pi]
     if (is_refl) {
         std.mem.swap(f32, &result.sin, &result.cos);
+    }
+    {
+        const turns = std.math.atan2(f32, result.sin, result.cos) / _2PI;
+        std.debug.assert(0 <= turns and turns <= 0.251);
     }
     // Conditionally adjust signs of the result based on the angle's quadrant
     //     [0, 4/8 pi] -> [0, 16/8 pi]
