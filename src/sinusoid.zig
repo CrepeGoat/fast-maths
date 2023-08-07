@@ -19,27 +19,36 @@ test "arctan2 functions" {
     const coord_low = -10.0;
     const coord_high = 10.0;
 
-    const tolerance = 9607;
-
-    var max: u16 = 0;
-    for (0..sample_count) |i| for (0..sample_count) |j| {
-        const n: comptime_float = @floatFromInt(sample_count);
-        const i_float: f32 = @floatFromInt(i);
-        const j_float: f32 = @floatFromInt(j);
-        const x: f32 = ((coord_high - coord_low) / n) * i_float - coord_low;
-        const y: f32 = ((coord_high - coord_low) / n) * j_float - coord_low;
-
-        const result = atan2Cordic3Poly1(y, x);
-        const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (2 * std.math.pi));
-
-        const epsilon: i16 = @bitCast(expt_result -% result);
-        max = @max(max, std.math.absCast(epsilon));
-        try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
+    const FuncType: type = fn (f32, f32) callconv(.C) u16;
+    const test_cases = [_]struct { FuncType, comptime_int }{
+        .{ atan2Cordic2Rational2, 9607 },
+        .{ atan2Cordic3Poly1, 710 },
     };
-    std.debug.print("max: {d}\n", .{max});
+
+    inline for (test_cases) |test_case| {
+        const func = test_case[0];
+        const tolerance = test_case[1];
+
+        var max: u16 = 0;
+        for (0..sample_count) |i| for (0..sample_count) |j| {
+            const n: comptime_float = @floatFromInt(sample_count);
+            const i_float: f32 = @floatFromInt(i);
+            const j_float: f32 = @floatFromInt(j);
+            const x: f32 = ((coord_high - coord_low) / n) * i_float - coord_low;
+            const y: f32 = ((coord_high - coord_low) / n) * j_float - coord_low;
+
+            const result = func(y, x);
+            const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (2 * std.math.pi));
+
+            const epsilon: i16 = @bitCast(expt_result -% result);
+            max = @max(max, std.math.absCast(epsilon));
+            try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
+        };
+        std.debug.print("max: {d}\n", .{max});
+    }
 }
 
-pub export fn atan2Rational2(y: f32, x: f32) u16 {
+pub export fn atan2Cordic2Rational2(y: f32, x: f32) u16 {
     var x_mut = x;
     var y_mut = y;
 
