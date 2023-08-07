@@ -22,7 +22,7 @@ test "arctan2 functions" {
     const FuncType: type = fn (f32, f32) callconv(.C) u16;
     const test_cases = [_]struct { FuncType, comptime_int }{
         .{ atan2Cordic2Rational2, 9607 },
-        .{ atan2Cordic3Poly1, 710 },
+        .{ atan2Cordic2Poly1, 710 },
     };
 
     inline for (test_cases) |test_case| {
@@ -38,7 +38,7 @@ test "arctan2 functions" {
             const y: f32 = ((coord_high - coord_low) / n) * j_float - coord_low;
 
             const result = func(y, x);
-            const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (2 * std.math.pi));
+            const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (_2PI));
 
             const epsilon: i16 = @bitCast(expt_result -% result);
             max = @max(max, std.math.absCast(epsilon));
@@ -106,31 +106,23 @@ pub export fn atan2Cordic2Rational2(y: f32, x: f32) u16 {
     return angle;
 }
 
-pub export fn atan2Cordic3Poly1(y: f32, x: f32) u16 {
+pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
     var x_mut = x;
     var y_mut = y;
 
-    const is_rot_180 = y_mut < 0;
-    if (is_rot_180) {
-        // Rotate -180
-        const tmp = x_mut;
-        x_mut = -y_mut;
-        y_mut = -tmp;
-    }
-    const is_rot_90 = x_mut < 0;
+    const is_rot_90 = x_mut < y_mut;
     if (is_rot_90) {
         // Rotate -90
         const tmp = x_mut;
         x_mut = y_mut;
         y_mut = -tmp;
     }
-    const is_rot_45 = x_mut < y_mut;
-    if (is_rot_45) {
-        // Rotate -45
-        const x_tmp = x_mut;
-        const y_tmp = y_mut;
-        x_mut = SQRT_HALF * (x_tmp + y_tmp);
-        y_mut = SQRT_HALF * (y_tmp - x_tmp);
+    const is_rot_180 = x_mut < 0;
+    if (is_rot_180) {
+        // Rotate -180
+        const tmp = x_mut;
+        x_mut = -y_mut;
+        y_mut = -tmp;
     }
 
     if (x_mut == 0) {
@@ -139,16 +131,16 @@ pub export fn atan2Cordic3Poly1(y: f32, x: f32) u16 {
 
     const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
     const slope_adj = 0.5 * (1 + SQRT_HALF);
-    var result: u16 = @intFromFloat((comptime radians_to_uint * slope_adj) * y_mut / x_mut);
+    var result: u16 = @bitCast(@as(
+        i16,
+        @intFromFloat((comptime radians_to_uint * slope_adj) * y_mut / x_mut),
+    ));
 
-    if (is_rot_45) {
-        result += Q_4TH_PI;
-    }
-    if (is_rot_90) {
-        result += Q_HALF_PI;
-    }
     if (is_rot_180) {
         result += Q_PI;
+    }
+    if (is_rot_90) {
+        result +%= Q_HALF_PI;
     }
 
     return result;
