@@ -69,6 +69,7 @@ pub export fn atan2Cordic2Rational3(y: f32, x: f32) u16 {
     }
 
     const is_rot_180 = x_mut < 0;
+    // tan(x) = tan(x + 180) -> no need to rotate 180
 
     // Math section follows.
     // In total, we perform 7 multiplications and 2 additions.
@@ -123,6 +124,7 @@ pub export fn atan2Cordic2Poly1(y: f32, x: f32) u16 {
     }
 
     const is_rot_180 = x_mut < 0;
+    // tan(x) = tan(x + 180) -> no need to rotate 180
 
     // Approximate atan about tan = 0
     const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
