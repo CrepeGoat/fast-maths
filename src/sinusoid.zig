@@ -21,6 +21,7 @@ test "arctan2 functions" {
 
     const tolerance = 9607;
 
+    var max: u16 = 0;
     for (0..sample_count) |i| for (0..sample_count) |j| {
         const n: comptime_float = @floatFromInt(sample_count);
         const i_float: f32 = @floatFromInt(i);
@@ -28,12 +29,14 @@ test "arctan2 functions" {
         const x: f32 = ((coord_high - coord_low) / n) * i_float - coord_low;
         const y: f32 = ((coord_high - coord_low) / n) * j_float - coord_low;
 
-        const result = atan2Rational2(y, x);
+        const result = atan2Cordic3Poly1(y, x);
         const expt_result: u16 = @intFromFloat(std.math.atan2(f32, y, x) * (1 << @bitSizeOf(u16)) / (2 * std.math.pi));
 
         const epsilon: i16 = @bitCast(expt_result -% result);
+        max = @max(max, std.math.absCast(epsilon));
         try std.testing.expect(std.math.absCast(epsilon) <= tolerance);
     };
+    std.debug.print("max: {d}\n", .{max});
 }
 
 pub export fn atan2Rational2(y: f32, x: f32) u16 {
@@ -92,6 +95,54 @@ pub export fn atan2Rational2(y: f32, x: f32) u16 {
     // Conversion to s16 adds 2 instructions and 2 cycles.
     // Return instruction is 1 more instruction and 1 more cycle.
     return angle;
+}
+
+pub export fn atan2Cordic3Poly1(y: f32, x: f32) u16 {
+    var x_mut = x;
+    var y_mut = y;
+
+    const is_rot_180 = y_mut < 0;
+    if (is_rot_180) {
+        // Rotate -180
+        const tmp = x_mut;
+        x_mut = -y_mut;
+        y_mut = -tmp;
+    }
+    const is_rot_90 = x_mut < 0;
+    if (is_rot_90) {
+        // Rotate -90
+        const tmp = x_mut;
+        x_mut = y_mut;
+        y_mut = -tmp;
+    }
+    const is_rot_45 = x_mut < y_mut;
+    if (is_rot_45) {
+        // Rotate -45
+        const x_tmp = x_mut;
+        const y_tmp = y_mut;
+        x_mut = SQRT_HALF * (x_tmp + y_tmp);
+        y_mut = SQRT_HALF * (y_tmp - x_tmp);
+    }
+
+    if (x_mut == 0) {
+        return 0;
+    }
+
+    const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
+    const slope_adj = 0.5 * (1 + SQRT_HALF);
+    var result: u16 = @intFromFloat((comptime radians_to_uint * slope_adj) * y_mut / x_mut);
+
+    if (is_rot_45) {
+        result += Q_4TH_PI;
+    }
+    if (is_rot_90) {
+        result += Q_HALF_PI;
+    }
+    if (is_rot_180) {
+        result += Q_PI;
+    }
+
+    return result;
 }
 
 test "sincos functions" {
