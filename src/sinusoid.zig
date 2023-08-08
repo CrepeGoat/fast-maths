@@ -198,10 +198,11 @@ const atoms = struct {
         // for 1 extra subtraction in the cosine calculation.
         const x_half = (comptime 0.5 * scale_to_radians) * x_float;
         const xx_4th = x_half * x_half;
+        const _1_sub_xx_4th = 1 - xx_4th;
 
         return .{
-            .sin = x_half * (2 - xx_4th),
-            .cos = 1 - xx_4th - xx_4th,
+            .sin = x_half * (1 + _1_sub_xx_4th),
+            .cos = _1_sub_xx_4th - xx_4th,
         };
     }
 
