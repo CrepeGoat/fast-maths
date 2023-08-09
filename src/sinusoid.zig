@@ -218,11 +218,9 @@ const composites = struct {
         var y_mut = y;
 
         // Rotate input
-        const is_rot_n90 = @fabs(x_mut) < @fabs(y_mut);
-        if (is_rot_n90) {
-            const tmp = x_mut;
-            x_mut = y_mut;
-            y_mut = -tmp;
+        const is_refl_45 = @fabs(x_mut) < @fabs(y_mut);
+        if (is_refl_45) {
+            std.mem.swap(Float, &x_mut, &y_mut);
         }
         std.debug.assert(@fabs(x_mut) >= @fabs(y_mut));
 
@@ -240,8 +238,8 @@ const composites = struct {
         if (is_rot_180) {
             result +%= Q_PI;
         }
-        if (is_rot_n90) {
-            result +%= Q_HALF_PI;
+        if (is_refl_45) {
+            result = Q_HALF_PI -% result;
         }
 
         return result;
