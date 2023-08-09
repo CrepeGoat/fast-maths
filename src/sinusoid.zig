@@ -208,13 +208,12 @@ pub const SinCosExtern = extern struct {
 };
 
 const composites = struct {
-    const Atan2Cordic2Errors = error{AngleAtOrigin};
     fn atan2Cordic2(
-        comptime FloatType: type,
-        comptime atan2At0: fn (FloatType, FloatType) u16,
-        y: FloatType,
-        x: FloatType,
-    ) Atan2Cordic2Errors!u16 {
+        comptime Float: type,
+        comptime atan2At0: fn (Float, Float) u16,
+        y: Float,
+        x: Float,
+    ) error{AngleAtOrigin}!u16 {
         var x_mut = x;
         var y_mut = y;
 
