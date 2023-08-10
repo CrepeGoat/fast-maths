@@ -10,7 +10,7 @@ test "fibonacci numbers 0 to 10" {
     }
 }
 
-test "fibonacci number one million" {
+test "fibonacci number one million is the sum of the prior two" {
     const context = struct {
         const mod = 1000007;
         pub fn make_zero() u64 {
@@ -57,11 +57,10 @@ pub fn fibonacci(
     var index_bit = @bitSizeOf(NType) - @clz(n);
     while (index_bit > 0) {
         index_bit -= 1;
-        const bit = (n >> @intCast(index_bit)) & 1 != 0;
-        const index_offset: u8 = if (bit) 1 else 0;
+        const bit: u1 = @intCast(n >> @intCast(index_bit) & 1);
 
         for (0..2) |i| {
-            const j = i + index_offset;
+            const j = i + bit;
 
             buf2[i] = context.add(
                 context.mul(buf1[j / 2], buf1[(j + 1) / 2]),
