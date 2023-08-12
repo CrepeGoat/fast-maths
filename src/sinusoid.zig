@@ -294,7 +294,7 @@ const atoms = struct {
         std.debug.assert(den != 0.0);
 
         // Do a FLOOR and MFC1 instruction combo here! That should add 6 cycles and 2 instructions.
-        return @bitCast(@as(i16, @intFromFloat(@floor(num / den))));
+        return @bitCast(@as(i16, @intFromFloat(num / den)));
     }
 
     fn sincosPoly3ApproxComplement(comptime fN: type, x: anytype) SinCos(fN) {
