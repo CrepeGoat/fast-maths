@@ -21,6 +21,7 @@ test "arctan2 functions" {
 
     const FuncType: type = fn (f32, f32) callconv(.C) u16;
     const test_cases = [_]struct { FuncType, comptime_int }{
+        .{ atan2Cordic2PolySinCos, 14 },
         .{ atan2Cordic2Rational3, 2 },
         .{ atan2Cordic2Poly1, 500 },
     };
@@ -48,6 +49,16 @@ test "arctan2 functions" {
         // Corner-case: <x, y> = <0, 0>
         try std.testing.expectEqual(@as(u16, 0), func(0.0, 0.0));
     }
+}
+
+pub export fn atan2Cordic2PolySinCos(y: f32, x: f32) u16 {
+    const atan2At0 = struct {
+        fn call(_y: f32, _x: f32) u16 {
+            return atoms.atan2PolySincosAt0Mod180(f32, _y, _x);
+        }
+    }.call;
+
+    return composites.atan2Cordic2(f32, atan2At0, y, x) catch 0.0;
 }
 
 pub export fn atan2Cordic2Rational3(y: f32, x: f32) u16 {
@@ -295,6 +306,32 @@ const atoms = struct {
 
         // Do a FLOOR and MFC1 instruction combo here! That should add 6 cycles and 2 instructions.
         return @bitCast(@as(i16, @intFromFloat(num / den)));
+    }
+
+    /// Approximates atan2(y, x) as
+    ///
+    ///     atan2 = y/r - A * y/r (1 - x/r)
+    ///
+    /// where r = sqrt(x^2 + y^2)
+    fn atan2PolySincosAt0Mod180(comptime fN: type, y: fN, x: fN) u16 {
+        // y + A y (1 - x)
+        // = (y / r) + A (y / r) (1 - (x / r))
+        // = (y / r) (1 + A (1 - (x / r)))
+        // = (y / r) (1 / r) (r + A (r - x))
+        // = y / r^2 (r + A (r - x))
+
+        const r_sq = y * y + x * x;
+        var r = @sqrt(r_sq);
+        if (x < 0) {
+            r = -r;
+        }
+        const result_float = y * (r + 0.372 * (r - x)) / r_sq;
+
+        const radians_to_uint = @as(comptime_float, 1 << @bitSizeOf(u16)) / _2PI;
+        return @bitCast(@as(
+            i16,
+            @intFromFloat(radians_to_uint * result_float),
+        ));
     }
 
     fn sincosPoly3ApproxComplement(comptime fN: type, x: anytype) SinCos(fN) {
